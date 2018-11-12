@@ -1,12 +1,20 @@
 import numpy as np
 from keras.models import Sequential
-from keras.layers import Bidirectional, LSTM, Activation, Dense, Input, Concatenate, Average, Dot
+from keras.layers import Bidirectional
+from keras.layers import LSTM
+from keras.layers import Activation
+from keras.layers import Dense
+from keras.layers import Input
+from keras.layers import Concatenate
+from keras.layers import Average
+from keras.layers import Dot
+from keras.models import Model
 
 batch_size = 32
 ip_dim = 3
 attn_dim_wt = 3
-lstm_op_dim = 3
-op_1 = 5
+lstm_op_dim = 64
+op_1 = 32
 op_2 = 1
 
 model = Sequential()
@@ -31,4 +39,6 @@ final_feat = Concatenate()([clm_src, avg, art_src])
 x = Dense(op_1)(final_feat)
 x = Dense(op_2)(x)
 cred_score = Activation('softmax')(x)
+
+model = Model(inputs=[art_wrd, clm_wrd, art_src, clm_src], outputs=cred_score)
 
