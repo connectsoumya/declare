@@ -7,6 +7,11 @@ from sklearn.model_selection import StratifiedKFold
 from six.moves import cPickle as pickle
 import numpy as np
 import csv
+import re
+from nltk import SnowballStemmer
+import string
+from nltk.corpus import stopwords
+from keras.preprocessing.sequence import pad_sequences
 
 
 # Get embeddings from GloVe
@@ -26,6 +31,8 @@ def get_emb_idx(file_path='glove.6B.100d.txt'):
 def create_emb_matrix(vocab_size, embeddings_index, text):
     tokenizer = Tokenizer(num_words=vocab_size)
     tokenizer.fit_on_texts(texts=text)
+    sequences = tokenizer.texts_to_sequences(text)
+    data = pad_sequences(sequences, maxlen=50)
     embedding_matrix = np.zeros((vocab_size, 100))
     for word, index in tokenizer.word_index.items():
         if index > vocab_size - 1:
@@ -37,10 +44,56 @@ def create_emb_matrix(vocab_size, embeddings_index, text):
     return embedding_matrix
 
 
+def clean_text(text):
+    ## Remove puncuation
+    text = text.translate(string.punctuation)
+    ## Convert words to lower case and split them
+    text = text.lower().split()
+    ## Remove stop words
+    stops = set(stopwords.words("english"))
+    text = [w for w in text if not w in stops and len(w) >= 3]
+    text = " ".join(text)
+    ## Clean the text
+    text = re.sub(r"[^A-Za-z0-9^,!.\/'+-=]", " ", text)
+    text = re.sub(r"what's", "what is ", text)
+    text = re.sub(r"\'s", " ", text)
+    text = re.sub(r"\'ve", " have ", text)
+    text = re.sub(r"n't", " not ", text)
+    text = re.sub(r"i'm", "i am ", text)
+    text = re.sub(r"\'re", " are ", text)
+    text = re.sub(r"\'d", " would ", text)
+    text = re.sub(r"\'ll", " will ", text)
+    text = re.sub(r",", " ", text)
+    text = re.sub(r"\.", " ", text)
+    text = re.sub(r"!", " ! ", text)
+    text = re.sub(r"\/", " ", text)
+    text = re.sub(r"\^", " ^ ", text)
+    text = re.sub(r"\+", " + ", text)
+    text = re.sub(r"\-", " - ", text)
+    text = re.sub(r"\=", " = ", text)
+    text = re.sub(r"'", " ", text)
+    text = re.sub(r"(\d+)(k)", r"\g<1>000", text)
+    text = re.sub(r":", " : ", text)
+    text = re.sub(r" e g ", " eg ", text)
+    text = re.sub(r" b g ", " bg ", text)
+    text = re.sub(r" u s ", " american ", text)
+    text = re.sub(r"\0s", "0", text)
+    text = re.sub(r" 9 11 ", "911", text)
+    text = re.sub(r"e - mail", "email", text)
+    text = re.sub(r"j k", "jk", text)
+    text = re.sub(r"\s{2,}", " ", text)
+    ## Stemming
+    text = text.split()
+    stemmer = SnowballStemmer('english')
+    stemmed_words = [stemmer.stem(word) for word in text]
+    text = " ".join(stemmed_words)
+    return text
+
 def read_tsv_file(file_path='snopes.tsv'):
     cred_label = []
     claim_id = []
     claim_text = []
+    claim_source = []  # you need to add this depending on the dataset
     evidence = []
     evidence_source = []
     with open(file_path, 'rb') as f:
@@ -48,9 +101,9 @@ def read_tsv_file(file_path='snopes.tsv'):
         for row in tsv_input:
             cred_label.append(row[0])
             claim_id.append(row[1])
-            claim_text.append(row[2])
-            evidence.append(row[3])
-            evidence_source.append(row[4])
+            claim_text.append(clean_text(row[2]))
+            evidence.append(clean_text(row[3]))
+            evidence_source.append(clean_text(row[4]))
     record = {'cred_label': cred_label,
               'claim_id': claim_id,
               'claim_text': claim_text,
@@ -61,11 +114,22 @@ def read_tsv_file(file_path='snopes.tsv'):
         pickle.dump(record, f)
 
 
-def yield_data(file_path='snopes.npy', batch_size=1):
+def yield_data(file_path='snopes.npy'):
+    voc = 20000
     with open(file_path, 'rb') as f:
         record = pickle.load(f)
     emb_idx = get_emb_idx('glove.6B.100d.txt')
-    claim_word_emb = 2
+    for i in range(len(record['claim_text'])):
+        claim_word_emb = create_emb_matrix(8, emb_idx, [record['claim_text'][i]])
+        claim_word_emb_mean = np.expand_dims(np.mean(claim_word_emb, axis=0), axis=0)
+        article_word_emb = create_emb_matrix(voc, emb_idx, [record['evidence'][i]])
+        art_source_emb = create_emb_matrix(4, emb_idx, [record['evidence_source'][i]])
+        input_to_dense = np.concatenate((article_word_emb, np.repeat(claim_word_emb_mean, voc, axis=0)), axis=1)
+        label = 0 if record['cred_label'][i] == 'false' else 1
+        # yield np.expand_dims(article_word_emb, axis=0), np.expand_dims(input_to_dense, axis=0), np.expand_dims(art_source_emb, axis=0), np.array([[label]])
+
+
+
 
 if __name__ == '__main__':
     yield_data('snopes.npy')
