@@ -31,8 +31,6 @@ def get_emb_idx(file_path='glove.6B.100d.txt'):
 def create_emb_matrix(vocab_size, embeddings_index, text):
     tokenizer = Tokenizer(num_words=vocab_size)
     tokenizer.fit_on_texts(texts=text)
-    sequences = tokenizer.texts_to_sequences(text)
-    data = pad_sequences(sequences, maxlen=50)
     embedding_matrix = np.zeros((vocab_size, 100))
     for word, index in tokenizer.word_index.items():
         if index > vocab_size - 1:
@@ -44,8 +42,18 @@ def create_emb_matrix(vocab_size, embeddings_index, text):
     return embedding_matrix
 
 
+# Create a weight matrix for words in training docs
+def create_data(vocab_size, text, max_len):
+    tokenizer = Tokenizer(num_words=vocab_size)
+    tokenizer.fit_on_texts(texts=text)
+    sequences = tokenizer.texts_to_sequences(text)
+    data = pad_sequences(sequences, maxlen=max_len)
+    return data
+
+
 def clean_text(text):
     ## Remove puncuation
+    text = unicode(text, "utf-8")
     text = text.translate(string.punctuation)
     ## Convert words to lower case and split them
     text = text.lower().split()
@@ -101,9 +109,12 @@ def read_tsv_file(file_path='snopes.tsv'):
         for row in tsv_input:
             cred_label.append(row[0])
             claim_id.append(row[1])
-            claim_text.append(clean_text(row[2]))
-            evidence.append(clean_text(row[3]))
-            evidence_source.append(clean_text(row[4]))
+            # claim_text.append(clean_text(row[2]))
+            claim_text.append(row[2])
+            # evidence.append(clean_text(row[3]))
+            # evidence_source.append(clean_text(row[4]))
+            evidence.append(row[3])
+            evidence_source.append(row[4])
     record = {'cred_label': cred_label,
               'claim_id': claim_id,
               'claim_text': claim_text,
@@ -114,22 +125,31 @@ def read_tsv_file(file_path='snopes.tsv'):
         pickle.dump(record, f)
 
 
-def yield_data(file_path='snopes.npy'):
-    voc = 20000
-    with open(file_path, 'rb') as f:
-        record = pickle.load(f)
-    emb_idx = get_emb_idx('glove.6B.100d.txt')
+def yield_data(record):
+    voc = 50000
+    # with open(file_path, 'rb') as f:
+    #     record = pickle.load(f)
+    # emb_idx = get_emb_idx('glove.6B.100d.txt')
+    # # for i in range(len(record['claim_text'])):
+    # #     claim_word_emb = create_emb_matrix(8, emb_idx, [record['claim_text'][i]])
+    # #     claim_word_emb_mean = np.expand_dims(np.mean(claim_word_emb, axis=0), axis=0)
+    # #     article_word_emb = create_emb_matrix(voc, emb_idx, [record['evidence'][i]])
+    # #     art_source_emb = create_emb_matrix(4, emb_idx, [record['evidence_source'][i]])
+    # #     input_to_dense = np.concatenate((article_word_emb, np.repeat(claim_word_emb_mean, voc, axis=0)), axis=1)
+    # #     label = 0 if record['cred_label'][i] == 'false' else 1
+    # word_emb = create_emb_matrix(voc, emb_idx, record['claim_text'] + record['evidence'])# + record['evidence_source'])
     for i in range(len(record['claim_text'])):
-        claim_word_emb = create_emb_matrix(8, emb_idx, [record['claim_text'][i]])
-        claim_word_emb_mean = np.expand_dims(np.mean(claim_word_emb, axis=0), axis=0)
-        article_word_emb = create_emb_matrix(voc, emb_idx, [record['evidence'][i]])
-        art_source_emb = create_emb_matrix(4, emb_idx, [record['evidence_source'][i]])
-        input_to_dense = np.concatenate((article_word_emb, np.repeat(claim_word_emb_mean, voc, axis=0)), axis=1)
-        label = 0 if record['cred_label'][i] == 'false' else 1
-        # yield np.expand_dims(article_word_emb, axis=0), np.expand_dims(input_to_dense, axis=0), np.expand_dims(art_source_emb, axis=0), np.array([[label]])
+        claim_word_data = create_data(voc, [record['claim_text'][i]], 100)
+        claim_word_data_mean = np.expand_dims(np.mean(claim_word_data, axis=0), axis=0)
+        article_word_data = create_data(voc, [record['evidence'][i]], 100)
+        art_source_data = create_data(voc, [record['evidence_source'][i]], 8)
+        input_to_dense = np.concatenate((article_word_data, claim_word_data_mean), axis=1)
+        label = [0 if [record['cred_label']][i] == 'false' else 1]
+        yield np.expand_dims(article_word_data, axis=0), np.expand_dims(input_to_dense, axis=0), np.expand_dims(art_source_data, axis=0), np.array([label])
 
 
 
 
 if __name__ == '__main__':
-    yield_data('snopes.npy')
+    read_tsv_file()
+    # yield_data('snopes.npy')
